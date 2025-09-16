@@ -1,0 +1,750 @@
+version: "3.8"
+# docker exec -it 950e89b97ab9 perf stat -e user_time:u,branch-instructions:u,cpu-cycles,mem-loads  -- sleep 10
+services:
+  consul:
+    image: hashicorp/consul:latest
+    ports:
+      - "8300:8300"
+      - "8400:8400"
+      - "8500:8500"
+      - "8600:53/udp"
+    restart: always
+    cap_add:
+      - SYS_ADMIN
+      - PERFMON
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: any
+
+  frontend:
+    configs:
+      - source: server_config
+        target: /config.json
+    environment:
+      - TLS
+      - GC
+      - JAEGER_SAMPLE_RATIO
+      - LOG_LEVEL
+    build: .
+    security_opt:
+      - seccomp:unconfined
+    sysctls:
+      - net.ipv4.tcp_rmem=4096
+      - net.ipv4.tcp_wmem=8192
+      # - vm.vfs_cache_pressure=100
+    image: deathstarbench/hotel-reservation:latest
+    privileged: true
+    entrypoint: frontend
+    ports:
+      - "5000:5000"
+    depends_on:
+      - consul
+    restart: always
+    cap_add:
+      - SYS_ADMIN
+      - PERFMON
+    deploy:
+      replicas: 1
+      resources:
+        limits:
+          cpus: '0.3'
+        #   memory: 128M
+        # reservations:
+        #   cpus: '0.15'
+        #   memory: 64M
+      restart_policy:
+        condition: any
+
+  profile:
+    configs:
+      - source: server_config
+        target: /config.json
+    environment:
+      - TLS
+      - GC
+      - JAEGER_SAMPLE_RATIO
+      - LOG_LEVEL
+    build: .
+    security_opt:
+      - seccomp:unconfined
+    cap_add:
+      - SYS_ADMIN
+      - PERFMON
+    sysctls:
+      - net.ipv4.tcp_rmem=8192
+      - net.ipv4.tcp_wmem=8192
+      # - vm.vfs_cache_pressure=100
+    image: deathstarbench/hotel-reservation:latest
+    privileged: true
+    entrypoint: profile
+    depends_on:
+      - mongodb-profile
+      - memcached-profile
+      - consul
+    restart: always
+    deploy:
+      replicas: 1
+      resources:
+        limits:
+          cpus: '0.3'
+        #   memory: 128M
+        # reservations:
+        #   cpus: '0.15'
+        #   memory: 64M
+      restart_policy:
+        condition: any
+
+  search:
+    configs:
+      - source: server_config
+        target: /config.json
+    environment:
+      - TLS
+      - GC
+      - JAEGER_SAMPLE_RATIO
+      - LOG_LEVEL
+    build: .
+    security_opt:
+      - seccomp:unconfined
+    cap_add:
+      - SYS_ADMIN
+      - PERFMON
+    sysctls:
+      - net.ipv4.tcp_rmem=8192
+      - net.ipv4.tcp_wmem=32768
+      # - vm.vfs_cache_pressure=132
+    image: deathstarbench/hotel-reservation:latest
+    privileged: true
+    entrypoint: search
+    depends_on:
+      - consul
+    restart: always
+    deploy:
+      replicas: 1
+      resources:
+        limits:
+          cpus: '0.3'
+          # memory: 128M
+        # reservations:
+        #   cpus: '0.15'
+          # memory: 64M
+      restart_policy:
+        condition: any
+
+  geo:
+    configs:
+      - source: server_config
+        target: /config.json
+    environment:
+      - TLS
+      - GC
+      - JAEGER_SAMPLE_RATIO
+      - LOG_LEVEL
+    build: .
+    security_opt:
+      - seccomp:unconfined
+    sysctls:
+      - net.ipv4.tcp_rmem=4096
+      - net.ipv4.tcp_wmem=16378
+      # - vm.vfs_cache_pressure=200
+    image: deathstarbench/hotel-reservation:latest
+    privileged: true
+    entrypoint: geo
+    depends_on:
+      - mongodb-geo
+      - consul
+    restart: always
+    cap_add:
+      - SYS_ADMIN
+      - PERFMON
+    deploy:
+      replicas: 1
+      resources:
+        limits:
+          cpus: '0.3'
+        #   memory: 128M
+        # reservations:
+        #   cpus: '0.15'
+        #   memory: 64M
+      restart_policy:
+        condition: any
+
+  rate:
+    configs:
+      - source: server_config
+        target: /config.json
+    environment:
+      - TLS
+      - GC
+      - JAEGER_SAMPLE_RATIO
+      - LOG_LEVEL
+    build: .
+    security_opt:
+      - seccomp:unconfined
+    sysctls:
+      - net.ipv4.tcp_rmem=16384
+      - net.ipv4.tcp_wmem=16384
+      # - vm.vfs_cache_pressure=143
+    image: deathstarbench/hotel-reservation:latest
+    privileged: true
+    cap_add:
+      - SYS_ADMIN
+      - PERFMON
+    entrypoint: rate
+    depends_on:
+      - mongodb-rate
+      - memcached-rate
+      - consul
+    restart: always
+    deploy:
+      replicas: 1
+      resources:
+        limits:
+          cpus: '0.3'
+        #   memory: 128M
+        # reservations:
+        #   cpus: '0.15'
+        #   memory: 64M
+      restart_policy:
+        condition: any
+
+  review:
+    environment:
+      - TLS
+      - GC
+      - JAEGER_SAMPLE_RATIO
+      - MEMC_TIMEOUT
+      - LOG_LEVEL
+    build: .
+    security_opt:
+      - seccomp:unconfined
+    cap_add:
+      - SYS_ADMIN
+      - PERFMON
+    sysctls:
+      - net.ipv4.tcp_rmem=8192
+      - net.ipv4.tcp_wmem=4096
+      # - vm.vfs_cache_pressure=250
+    image: hotel_reserv_review_single_node
+    privileged: true
+    entrypoint: review
+    container_name: 'hotel_reserv_review'
+    depends_on:
+      - mongodb-review
+      - memcached-review
+      - consul
+    restart: always
+  
+  attractions:
+    environment:
+      - TLS
+      - GC
+      - JAEGER_SAMPLE_RATIO
+      - MEMC_TIMEOUT
+      - LOG_LEVEL
+    build: .
+    cap_add:
+      - SYS_ADMIN
+      - PERFMON
+    sysctls:
+      - net.ipv4.tcp_rmem=4096
+      - net.ipv4.tcp_wmem=8192
+      # - vm.vfs_cache_pressure=210
+    image: hotel_reserv_attractions_single_node
+    privileged: true
+    entrypoint: attractions
+    container_name: 'hotel_reserv_attractions'
+    depends_on:
+      - mongodb-attractions
+      - consul
+    restart: always
+
+  recommendation:
+    configs:
+      - source: server_config
+        target: /config.json
+    environment:
+      - TLS
+      - GC
+      - JAEGER_SAMPLE_RATIO
+      - LOG_LEVEL
+    build: .
+    security_opt:
+      - seccomp:unconfined
+    sysctls:
+      - net.ipv4.tcp_rmem=16384
+      - net.ipv4.tcp_wmem=65536
+      # - vm.vfs_cache_pressure=104
+    image: deathstarbench/hotel-reservation:latest
+    privileged: true
+    entrypoint: recommendation
+    depends_on:
+      - mongodb-recommendation
+      - consul
+    restart: always
+    cap_add:
+      - SYS_ADMIN
+      - PERFMON
+    deploy:
+      replicas: 1
+      resources:
+        limits:
+          cpus: '0.3'
+        #   memory: 128M
+        # reservations:
+        #   cpus: '0.15'
+        #   memory: 64M
+      restart_policy:
+        condition: any
+
+  user:
+    configs:
+      - source: server_config
+        target: /config.json
+    environment:
+      - TLS
+      - GC
+      - JAEGER_SAMPLE_RATIO
+      - LOG_LEVEL
+    build: .
+    security_opt:
+      - seccomp:unconfined
+    cap_add:
+      - SYS_ADMIN
+      - PERFMON
+    sysctls:
+      - net.ipv4.tcp_rmem=4096
+      - net.ipv4.tcp_wmem=4096
+      # - vm.vfs_cache_pressure=145
+    image: deathstarbench/hotel-reservation:latest
+    privileged: true
+    entrypoint: user
+    depends_on:
+      - mongodb-user
+      - consul
+    restart: always
+    deploy:
+      replicas: 1
+      resources:
+        limits:
+          cpus: '0.3'
+        #   memory: 128M
+        # reservations:
+        #   cpus: '0.15'
+        #   memory: 64M
+      restart_policy:
+        condition: any
+
+  reservation:
+    configs:
+      - source: server_config
+        target: /config.json
+    environment:
+      - TLS
+      - GC
+      - JAEGER_SAMPLE_RATIO
+      - LOG_LEVEL
+    build: .
+    security_opt:
+      - seccomp:unconfined
+    sysctls:
+      - net.ipv4.tcp_rmem=16384
+      - net.ipv4.tcp_wmem=65536
+      # - vm.vfs_cache_pressure=145
+    image: deathstarbench/hotel-reservation:latest
+    privileged: true
+    cap_add:
+      - SYS_ADMIN
+      - PERFMON
+    entrypoint: reservation
+    depends_on:
+      - mongodb-reservation
+      - memcached-reserve
+      - consul
+    restart: always
+    deploy:
+      replicas: 1
+      resources:
+        limits:
+          cpus: '0.3'
+        #   memory: 128M
+        # reservations:
+        #   cpus: '0.15'
+        #   memory: 64M
+      restart_policy:
+        condition: any
+
+  jaeger:
+    image: jaegertracing/all-in-one:latest
+    privileged: true
+    security_opt:
+      - seccomp:unconfined
+    cap_add:
+      - SYS_ADMIN
+      - PERFMON
+    ports:
+      - "14269"
+      - "5778:5778"
+      - "14268:14268"
+      - "14267"
+      - "16686:16686"
+      - "5775:5775/udp"
+      - "6831:6831/udp"
+      - "6832:6832/udp"
+    restart: always
+    deploy:
+      replicas: 1
+      resources:
+        limits:
+          cpus: '0.3'
+        #   memory: 128M
+        # reservations:
+        #   cpus: '0.15'
+        #   memory: 64M
+      restart_policy:
+        condition: any
+
+  memcached-rate:
+    image: memcached:latest
+    security_opt:
+      - seccomp:unconfined
+    privileged: true
+    cap_add:
+      - SYS_ADMIN
+      - PERFMON
+    hostname: user-memcached
+    environment:
+      - MEMCACHED_CACHE_SIZE=128
+      - MEMCACHED_THREADS=2
+    logging:
+      options:
+        max-size: 50m
+    restart: always
+    deploy:
+      replicas: 1
+      resources:
+        limits:
+          cpus: '0.3'
+        #   memory: 128M
+        # reservations:
+        #   cpus: '0.15'
+        #   memory: 64M
+      restart_policy:
+        condition: any
+
+  memcached-review:
+    image: memcached
+    privileged: true
+    security_opt:
+      - seccomp:unconfined
+    cap_add:
+      - SYS_ADMIN
+      - PERFMON
+    hostname: user-memcached
+    container_name: 'hotel_reserv_review_mmc'
+    restart: always
+    environment:
+      - MEMCACHED_CACHE_SIZE=128
+      - MEMCACHED_THREADS=2
+    logging:
+      options:
+        max-size: 50m
+
+  memcached-profile:
+    image: memcached:latest
+    security_opt:
+      - seccomp:unconfined
+    privileged: true
+    cap_add:
+      - SYS_ADMIN
+      - PERFMON
+    hostname: user-memcached
+    environment:
+      - MEMCACHED_CACHE_SIZE=128
+      - MEMCACHED_THREADS=2
+    logging:
+      options:
+        max-size: 50m
+    restart: always
+    deploy:
+      replicas: 1
+      resources:
+        limits:
+          cpus: '0.3'
+        #   memory: 128M
+        # reservations:
+        #   cpus: '0.15'
+        #   memory: 64M
+      restart_policy:
+        condition: any
+
+  memcached-reserve:
+    image: memcached:latest
+    security_opt:
+      - seccomp:unconfined
+    privileged: true
+    cap_add:
+      - SYS_ADMIN
+      - PERFMON
+    hostname: user-memcached
+    command: memcached -m 128 -t 2 -f 1.5
+    # environment:
+    #   - MEMCACHED_CACHE_SIZE=128
+    #   - MEMCACHED_THREADS=2
+    logging:
+      options:
+        max-size: 50m
+    restart: always
+    deploy:
+      replicas: 1
+      resources:
+        limits:
+          cpus: '0.3'
+        #   memory: 128M
+        # reservations:
+        #   cpus: '0.15'
+        #   memory: 64M
+      restart_policy:
+        condition: any
+
+  mongodb-geo:
+    image: mongo:5.0
+    security_opt:
+      - seccomp:unconfined
+    privileged: true
+    cap_add:
+      - SYS_ADMIN
+      - PERFMON
+    hostname: geo-db
+    volumes:
+      - geo:/data/db
+      - ./init_geo.d/:/docker-entrypoint-initdb.d/
+    # command:   --wiredTigerCacheSizeGB 1 --setParameter wiredTigerEngineRuntimeConfig="eviction=(threads_min=6,threads_max=12)"
+      # sh -c 'echo -e "storage:\n  wiredTiger:\n    engineConfig:\n      cacheSizeGB: 1\n      eviction:\n        dirtyTarget: 20\n        dirtyTrigger: 80" > /tmp/mongod.conf 
+      # && mongod --config /tmp/mongod.conf'
+    sysctls:
+      - net.ipv4.tcp_rmem=16384
+      - net.ipv4.tcp_wmem=65536
+    restart: always
+    deploy:
+      replicas: 1
+      resources:
+        limits:
+          cpus: '0.3'
+        #   memory: 128M
+        # reservations:
+        #   cpus: '0.15'
+        #   memory: 64M
+      restart_policy:
+        condition: any
+
+  mongodb-profile:
+    image: mongo:5.0
+    security_opt:
+      - seccomp:unconfined
+    privileged: true
+    cap_add:
+      - SYS_ADMIN
+      - PERFMON
+    hostname: profile-db
+    volumes:
+      - profile:/data/db
+      - ./init_profile.d/:/docker-entrypoint-initdb.d/
+    sysctls:
+      - net.ipv4.tcp_rmem=16384
+      - net.ipv4.tcp_wmem=65536
+    restart: always
+    deploy:
+      replicas: 1
+      resources:
+        limits:
+          cpus: '0.3'
+        #   memory: 128M
+        # reservations:
+        #   cpus: '0.15'
+        #   memory: 64M
+      restart_policy:
+        condition: any
+
+  mongodb-rate:
+    image: mongo:5.0
+    security_opt:
+      - seccomp:unconfined
+    privileged: true
+    cap_add:
+      - SYS_ADMIN
+      - PERFMON
+    hostname: rate-db
+    volumes:
+      - rate:/data/db
+      - ./init_rate.d/:/docker-entrypoint-initdb.d/
+    sysctls:
+      - net.ipv4.tcp_rmem=16384
+      - net.ipv4.tcp_wmem=65536
+    restart: always
+    deploy:
+      replicas: 1
+      resources:
+        limits:
+          cpus: '0.3'
+        #   memory: 128M
+        # reservations:
+        #   cpus: '0.15'
+        #   memory: 64M
+      restart_policy:
+        condition: any
+
+  mongodb-review:
+    image: mongo:5.0
+    security_opt:
+      - seccomp:unconfined
+    privileged: true
+    cap_add:
+      - SYS_ADMIN
+      - PERFMON
+    hostname: review-db
+    volumes:
+      - review:/data/db
+      - ./init_review.d/:/docker-entrypoint-initdb.d/
+    sysctls:
+      - net.ipv4.tcp_rmem=16384
+      - net.ipv4.tcp_wmem=65536
+    restart: always
+    deploy:
+      replicas: 1
+      resources:
+        limits:
+          cpus: '0.3'
+        #   memory: 128M
+        # reservations:
+        #   cpus: '0.15'
+        #   memory: 64M
+      restart_policy:
+        condition: any
+
+  mongodb-attractions:
+    image: mongo:5.0
+    security_opt:
+      - seccomp:unconfined
+    privileged: true
+    cap_add:
+      - SYS_ADMIN
+      - PERFMON
+    hostname: attractions-db
+    volumes:
+      - attractions:/data/db
+      - ./init_attractions.d/:/docker-entrypoint-initdb.d/
+    sysctls:
+      - net.ipv4.tcp_rmem=16384
+      - net.ipv4.tcp_wmem=65536
+    restart: always
+    deploy:
+      replicas: 1
+      resources:
+        limits:
+          cpus: '0.3'
+        #   memory: 128M
+        # reservations:
+        #   cpus: '0.15'
+        #   memory: 64M
+      restart_policy:
+        condition: any
+
+  mongodb-recommendation:
+    image: mongo:5.0
+    security_opt:
+      - seccomp:unconfined
+    privileged: true
+    cap_add:
+      - SYS_ADMIN
+      - PERFMON
+    hostname: recommendation-db
+    sysctls:
+      - net.ipv4.tcp_rmem=16384
+      - net.ipv4.tcp_wmem=65536
+    volumes:
+      - recommendation:/data/db
+      - ./init_recommendation.d/:/docker-entrypoint-initdb.d/
+    restart: always
+    deploy:
+      replicas: 1
+      resources:
+        limits:
+          cpus: '0.3'
+        #   memory: 128M
+        # reservations:
+        #   cpus: '0.15'
+        #   memory: 64M
+      restart_policy:
+        condition: any
+
+  mongodb-reservation:
+    image: mongo:5.0
+    security_opt:
+      - seccomp:unconfined
+    privileged: true
+    cap_add:
+      - SYS_ADMIN
+      - PERFMON
+    hostname: reservation-db
+    volumes:
+      - reservation:/data/db
+      - ./init_reservation.d/:/docker-entrypoint-initdb.d/
+    sysctls:
+      - net.ipv4.tcp_rmem=16384
+      - net.ipv4.tcp_wmem=65536
+    restart: always
+    deploy:
+      replicas: 1
+      resources:
+        limits:
+          cpus: '0.3'
+        #   memory: 128M
+        # reservations:
+        #   cpus: '0.15'
+        #   memory: 64M
+      restart_policy:
+        condition: any
+
+  mongodb-user:
+    image: mongo:5.0
+    security_opt:
+      - seccomp:unconfined
+    privileged: true
+    cap_add:
+      - SYS_ADMIN
+      - PERFMON
+    hostname: user-db
+    volumes:
+      - user:/data/db
+      - ./init_user.d/:/docker-entrypoint-initdb.d/
+    sysctls:
+      - net.ipv4.tcp_rmem=16384
+      - net.ipv4.tcp_wmem=65536
+    restart: always
+    deploy:
+      replicas: 1
+      resources:
+        limits:
+          cpus: '0.3'
+        #   memory: 128M
+        # reservations:
+        #   cpus: '0.15'
+        #   memory: 64M
+      restart_policy:
+        condition: any
+
+volumes:
+  geo:
+  profile:
+  rate:
+  recommendation:
+  reservation:
+  user:
+  review:
+  attractions:
+
+configs:
+  server_config:
+    file: ./config.json
